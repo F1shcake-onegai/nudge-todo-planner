@@ -17,11 +17,8 @@ export const tasks = sqliteTable("tasks", {
   parentTaskId: text("parent_task_id"),
   title: text("title").notNull(),
   notes: text("notes"),
-  estimatedMinutes: integer("estimated_minutes").notNull().default(30),
   priority: integer("priority").notNull().default(4), // 1..4, 4 = none (default)
   deadline: integer("deadline", { mode: "timestamp_ms" }),
-  scheduledStart: integer("scheduled_start", { mode: "timestamp_ms" }),
-  scheduledEnd: integer("scheduled_end", { mode: "timestamp_ms" }),
   status: text("status", { enum: ["todo", "doing", "done"] }).notNull().default("todo"),
   notifiedAt: integer("notified_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),

@@ -26,15 +26,18 @@ export function buildSystemPrompt(ctx: Awaited<ReturnType<typeof buildContext>>)
   const work = `${ctx.settings?.workHoursStart ?? "09:00"}–${ctx.settings?.workHoursEnd ?? "18:00"}`;
 
   const projectLines = ctx.projects.length
-    ? ctx.projects.map((p) => `- ${p.name} (id: ${p.id})`).join("\n")
+    ? ctx.projects
+        .map((p) => `- ${p.name} (id: ${p.id}, created: ${formatISO(p.createdAt)})`)
+        .join("\n")
     : "(no projects yet)";
 
   const taskLines = ctx.openTasks.length
     ? ctx.openTasks
         .map((t) => {
           const deadline = t.deadline ? ` · due ${formatISO(t.deadline)}` : "";
-          const sched = t.scheduledStart ? ` · scheduled ${formatISO(t.scheduledStart)}` : "";
-          return `- [${t.id}] ${t.title} (est ${t.estimatedMinutes}m, p${t.priority})${deadline}${sched}`;
+          const created = ` · created ${formatISO(t.createdAt)}`;
+          const status = t.status !== "todo" ? ` · ${t.status}` : "";
+          return `- [${t.id}] ${t.title} (p${t.priority})${deadline}${created}${status}`;
         })
         .join("\n")
     : "(no open tasks)";
@@ -44,9 +47,9 @@ export function buildSystemPrompt(ctx: Awaited<ReturnType<typeof buildContext>>)
 ═══ HARD SCOPE ═══
 You help with exactly these things:
   • creating / updating / deleting the user's tasks and projects
-  • setting deadlines, priorities, estimated durations
-  • scheduling task blocks, rescheduling, marking status
+  • setting deadlines, priorities, marking status (todo / doing / done)
   • reading the user's task/project context to answer "what do I have", "when is X due", etc.
+  • cleaning up old work ("delete all completed tasks from last week")
 
 For ANYTHING ELSE, respond with exactly one short sentence declining, and do not engage further. One sentence, nothing more. Examples:
   User: "Give me a recipe for braised pork"
@@ -81,13 +84,20 @@ If a pasted block contains BOTH a task-relevant request and off-topic content or
 
 ═══ TOOL USAGE ═══
   • Use tools for all mutations. Never "describe" what you'd do — call the tool.
-  • Prefer subtasks when a task has clear parts ("study 5 chapters" → 5 subtasks).
+  • Prefer subtasks when a task has clear parts ("study 5 chapters" → 5 subtasks). For long-running goals ("finish thesis"), create a parent task + 3–8 milestone subtasks (e.g. "week 1: outline"), NOT per-day subtasks — that floods the list.
   • Resolve fuzzy references ("the photo project", "that essay") against the open tasks below.
-  • For destructive actions (delete_tasks, delete_event), set confirm=false unless the user has explicitly authorized deletion in THIS turn.
-  • Estimate durations realistically (study chapter ≈ 60m, email ≈ 10m).
-  • Deadlines and scheduledStart are ISO strings in the user's timezone.
+  • For destructive actions (delete_tasks), set confirm=false unless the user has explicitly authorized deletion in THIS turn.
   • Priority: 1 = high, 2 = medium, 3 = low, 4 = none (default). Only raise when urgency is explicit.
   • After a tool call, confirm in one plain sentence. Don't restate JSON.
+
+Selector filters for update_tasks / delete_tasks:
+  • ids: [id1, ...]            — explicit rows
+  • titleMatches: "substring"   — partial, case-insensitive title match
+  • projectName: "Photo"        — all tasks in a project by name
+  • status: "done"              — filter by status
+  • createdBefore / createdAfter: ISO timestamp — filter by creation time
+Multiple fields combine with AND. Example: "delete all completed tasks from last week" →
+  selector: { status: "done", createdBefore: "<now - 7d as ISO>" }, confirm: false
 
 ═══ CONTEXT ═══
 Timezone: ${tz}

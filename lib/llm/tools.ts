@@ -1,16 +1,14 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { and, eq, inArray, like } from "drizzle-orm";
+import { and, eq, gt, inArray, like, lt } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { newId } from "@/lib/utils";
-import { scheduleAllPending } from "@/lib/scheduler";
 import { replanAfterMutation } from "@/lib/nudgePlanner";
 
 // ---- Shared sub-schemas ----
 
 const SubtaskIn = z.object({
   title: z.string(),
-  estimatedMinutes: z.number().int().positive().default(30),
   notes: z.string().optional(),
 });
 
@@ -18,9 +16,18 @@ const TaskIn = z.object({
   projectName: z.string().describe("Project this task belongs to. Will be created if new."),
   title: z.string(),
   notes: z.string().optional(),
-  estimatedMinutes: z.number().int().positive().default(30),
-  priority: z.number().int().min(1).max(4).default(4).describe("1 = high, 2 = medium, 3 = low, 4 = none (default). Only raise when the user signals urgency."),
-  deadlineIso: z.string().datetime().optional().describe("ISO 8601 deadline in the user's timezone. Leave empty if none."),
+  priority: z
+    .number()
+    .int()
+    .min(1)
+    .max(4)
+    .default(4)
+    .describe("1 = high, 2 = medium, 3 = low, 4 = none (default). Only raise when the user signals urgency."),
+  deadlineIso: z
+    .string()
+    .datetime()
+    .optional()
+    .describe("ISO 8601 deadline in the user's timezone. Leave empty if none."),
   subtasks: z.array(SubtaskIn).default([]),
 });
 
@@ -29,13 +36,29 @@ const Selector = z
     ids: z.array(z.string()).optional(),
     titleMatches: z.string().optional().describe("Substring of the task title (case-insensitive)."),
     projectName: z.string().optional(),
+    status: z
+      .enum(["todo", "doing", "done"])
+      .optional()
+      .describe("Match only tasks in this status."),
+    createdBefore: z
+      .string()
+      .datetime()
+      .optional()
+      .describe("ISO 8601. Match tasks with createdAt strictly before this time (e.g. 'a week ago')."),
+    createdAfter: z
+      .string()
+      .datetime()
+      .optional()
+      .describe("ISO 8601. Match tasks with createdAt strictly after this time (e.g. 'today')."),
   })
-  .describe("How to find tasks. Provide at least one field.");
+  .describe("How to find tasks. Provide at least one field; fields AND together.");
 
 // ---- Helpers ----
 
 async function upsertProject(name: string) {
-  const existing = await db.query.projects.findFirst({ where: eq(schema.projects.name, name) });
+  const existing = await db.query.projects.findFirst({
+    where: eq(schema.projects.name, name),
+  });
   if (existing) return existing;
   const id = newId("prj");
   await db.insert(schema.projects).values({ id, name });
@@ -47,10 +70,15 @@ async function resolveSelector(sel: z.infer<typeof Selector>) {
   if (sel.ids?.length) conds.push(inArray(schema.tasks.id, sel.ids));
   if (sel.titleMatches) conds.push(like(schema.tasks.title, `%${sel.titleMatches}%`));
   if (sel.projectName) {
-    const p = await db.query.projects.findFirst({ where: eq(schema.projects.name, sel.projectName) });
+    const p = await db.query.projects.findFirst({
+      where: eq(schema.projects.name, sel.projectName),
+    });
     if (p) conds.push(eq(schema.tasks.projectId, p.id));
     else return [];
   }
+  if (sel.status) conds.push(eq(schema.tasks.status, sel.status));
+  if (sel.createdBefore) conds.push(lt(schema.tasks.createdAt, new Date(sel.createdBefore)));
+  if (sel.createdAfter) conds.push(gt(schema.tasks.createdAt, new Date(sel.createdAfter)));
   if (!conds.length) return [];
   return db.query.tasks.findMany({ where: and(...conds) });
 }
@@ -79,7 +107,6 @@ export const create_tasks = tool({
         projectId: project.id,
         title: t.title,
         notes: t.notes,
-        estimatedMinutes: t.estimatedMinutes,
         priority: t.priority,
         deadline: t.deadlineIso ? new Date(t.deadlineIso) : undefined,
       });
@@ -90,7 +117,6 @@ export const create_tasks = tool({
           parentTaskId: id,
           title: s.title,
           notes: s.notes,
-          estimatedMinutes: s.estimatedMinutes,
           priority: t.priority,
         });
       }
@@ -98,19 +124,17 @@ export const create_tasks = tool({
     }
 
     if (rows.length) await db.insert(schema.tasks).values(rows);
-    const placed = await scheduleAllPending();
     replanAfterMutation();
     return {
       created,
-      scheduled: placed.length,
-      message: `Created ${created.length} task(s) and scheduled ${placed.length} block(s).`,
+      message: `Created ${created.length} task(s).`,
     };
   },
 });
 
 export const update_tasks = tool({
   description:
-    "Update existing tasks by selector. Use when the user says things like 'move the photo project to Monday' or 'mark chapter 3 done'.",
+    "Update existing tasks by selector. Use when the user says things like 'move the photo project deadline to Monday', 'mark chapter 3 done', or 'set priority high on the overdue ones'.",
   inputSchema: z.object({
     selector: Selector,
     patch: z.object({
@@ -118,9 +142,7 @@ export const update_tasks = tool({
       notes: z.string().optional(),
       deadlineIso: z.string().datetime().nullable().optional(),
       priority: z.number().int().min(1).max(4).optional(),
-      estimatedMinutes: z.number().int().positive().optional(),
       status: z.enum(["todo", "doing", "done"]).optional(),
-      rescheduleNow: z.boolean().optional().describe("If true, clear existing scheduledStart/End so the scheduler re-places it."),
     }),
   }),
   execute: async ({ selector, patch }) => {
@@ -133,21 +155,12 @@ export const update_tasks = tool({
     if (patch.deadlineIso !== undefined)
       values.deadline = patch.deadlineIso ? new Date(patch.deadlineIso) : null;
     if (patch.priority !== undefined) values.priority = patch.priority;
-    if (patch.estimatedMinutes !== undefined) values.estimatedMinutes = patch.estimatedMinutes;
     if (patch.status !== undefined) values.status = patch.status;
-    if (patch.rescheduleNow) {
-      values.scheduledStart = null;
-      values.scheduledEnd = null;
-    }
 
     await db
       .update(schema.tasks)
       .set(values)
       .where(inArray(schema.tasks.id, matches.map((m) => m.id)));
-
-    if (patch.rescheduleNow || patch.deadlineIso !== undefined) {
-      await scheduleAllPending();
-    }
 
     replanAfterMutation();
     return { updated: matches.length, message: `Updated ${matches.length} task(s).` };
@@ -156,8 +169,9 @@ export const update_tasks = tool({
 
 export const delete_tasks = tool({
   description:
-    "Delete tasks by selector. Set confirm=true only after the user has clearly authorized deletion. " +
-    "If confirm=false, the app will surface a confirmation dialog before executing.",
+    "Delete tasks by selector. Set confirm=true only after the user has clearly authorized deletion in THIS turn. " +
+    "If confirm=false, the app will surface a confirmation dialog before executing. " +
+    "Supports filtering by status + creation date, so 'delete all completed tasks older than a week' resolves cleanly.",
   inputSchema: z.object({
     selector: Selector,
     confirm: z.boolean().default(false),

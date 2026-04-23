@@ -17,16 +17,8 @@ export async function PATCH(
     const p = Math.floor(Number(body.priority));
     if (Number.isFinite(p)) values.priority = Math.max(1, Math.min(4, p));
   }
-  if (body.estimatedMinutes !== undefined) {
-    const n = Math.floor(Number(body.estimatedMinutes));
-    if (Number.isFinite(n) && n > 0) values.estimatedMinutes = n;
-  }
   if (body.deadline !== undefined)
     values.deadline = body.deadline ? new Date(body.deadline) : null;
-  if (body.scheduledStart !== undefined)
-    values.scheduledStart = body.scheduledStart ? new Date(body.scheduledStart) : null;
-  if (body.scheduledEnd !== undefined)
-    values.scheduledEnd = body.scheduledEnd ? new Date(body.scheduledEnd) : null;
   if (body.projectId !== undefined) values.projectId = body.projectId;
   if (body.parentTaskId !== undefined) values.parentTaskId = body.parentTaskId;
 

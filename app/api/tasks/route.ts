@@ -22,7 +22,6 @@ export async function POST(req: Request) {
     title,
     projectId: body.projectId ?? null,
     parentTaskId: body.parentTaskId ?? null,
-    estimatedMinutes: Math.max(1, Math.floor(Number(body.estimatedMinutes) || 30)),
     priority: Math.max(1, Math.min(4, Math.floor(Number(body.priority) || 4))),
     deadline: body.deadline ? new Date(body.deadline) : undefined,
     notes: body.notes ?? null,

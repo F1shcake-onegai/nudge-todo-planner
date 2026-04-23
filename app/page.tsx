@@ -7,7 +7,6 @@ import { ChatInput } from "@/components/ChatInput";
 import { ChatHistory } from "@/components/ChatHistory";
 import { TaskList } from "@/components/TaskList";
 import { AddTaskBar } from "@/components/AddTaskBar";
-import { CalendarSubscribeBanner } from "@/components/CalendarSubscribeBanner";
 import type { Project, Task } from "@/lib/db/schema";
 import Link from "next/link";
 import { Settings, Sparkles, LogOut, ListTodo, X } from "lucide-react";
@@ -36,8 +35,6 @@ export default function Home() {
         ...t,
         createdAt: new Date(t.createdAt),
         deadline: t.deadline ? new Date(t.deadline) : null,
-        scheduledStart: t.scheduledStart ? new Date(t.scheduledStart) : null,
-        scheduledEnd: t.scheduledEnd ? new Date(t.scheduledEnd) : null,
         notifiedAt: t.notifiedAt ? new Date(t.notifiedAt) : null,
       })),
     );
@@ -63,8 +60,6 @@ export default function Home() {
 
   return (
     <div className="flex h-dvh flex-col">
-      <CalendarSubscribeBanner />
-
       <header className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3 sm:px-5">
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-[var(--accent)]" />

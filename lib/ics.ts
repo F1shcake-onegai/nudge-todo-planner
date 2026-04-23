@@ -4,7 +4,6 @@ import { randomBytes } from "node:crypto";
 import { SETTINGS_ID } from "@/lib/db/schema";
 
 function fmtDate(d: Date) {
-  // UTC basic format: YYYYMMDDTHHMMSSZ
   const pad = (n: number, w = 2) => String(n).padStart(w, "0");
   return (
     d.getUTCFullYear().toString() +
@@ -18,12 +17,31 @@ function fmtDate(d: Date) {
   );
 }
 
+/** YYYYMMDD for DTSTART;VALUE=DATE (all-day event). */
+function fmtDateOnly(d: Date) {
+  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+  return (
+    d.getUTCFullYear().toString() +
+    pad(d.getUTCMonth() + 1) +
+    pad(d.getUTCDate())
+  );
+}
+
+function addDayUtc(d: Date, days: number) {
+  const n = new Date(d);
+  n.setUTCDate(n.getUTCDate() + days);
+  return n;
+}
+
 function escape(text: string) {
-  return text.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r?\n/g, "\\n");
 }
 
 function fold(line: string) {
-  // RFC 5545 line folding at 75 octets
   const out: string[] = [];
   while (line.length > 75) {
     out.push(line.slice(0, 75));
@@ -33,11 +51,17 @@ function fold(line: string) {
   return out.join("\r\n");
 }
 
-export async function buildIcsFeed(origin: string) {
-  const tasks = await db.query.tasks.findMany({
-    where: isNotNull(schema.tasks.scheduledStart),
-  });
-  const projects = await db.query.projects.findMany();
+/**
+ * Emit one all-day VEVENT per task that has a deadline. Tasks without a
+ * deadline produce no events. v2.1 dropped scheduled block placement, so
+ * this feed is now a deadlines-only view for external calendar clients.
+ */
+export async function buildIcsFeed(_origin: string) {
+  const [tasks, projects] = await Promise.all([
+    db.query.tasks.findMany({ where: isNotNull(schema.tasks.deadline) }),
+    db.query.projects.findMany(),
+  ]);
+  const projectById = new Map(projects.map((p) => [p.id, p]));
   const now = fmtDate(new Date());
 
   const lines: string[] = [];
@@ -46,24 +70,28 @@ export async function buildIcsFeed(origin: string) {
   lines.push("PRODID:-//nudge//EN");
   lines.push("CALSCALE:GREGORIAN");
   lines.push("METHOD:PUBLISH");
-  lines.push("X-WR-CALNAME:nudge");
+  lines.push("X-WR-CALNAME:nudge deadlines");
   lines.push("X-WR-TIMEZONE:UTC");
-  lines.push("REFRESH-INTERVAL;VALUE=DURATION:PT15M");
-  lines.push("X-PUBLISHED-TTL:PT15M");
+  lines.push("REFRESH-INTERVAL;VALUE=DURATION:PT1H");
+  lines.push("X-PUBLISHED-TTL:PT1H");
 
   for (const t of tasks) {
-    if (!t.scheduledStart || !t.scheduledEnd) continue;
-    const project = projects.find((p) => p.id === t.projectId);
+    if (!t.deadline) continue;
+    const project = t.projectId ? projectById.get(t.projectId) : undefined;
     const title = project ? `${project.name}: ${t.title}` : t.title;
+    // All-day event on the deadline date. DTEND is exclusive per RFC 5545,
+    // so add 1 day for a single-day span.
+    const dtStart = fmtDateOnly(t.deadline);
+    const dtEnd = fmtDateOnly(addDayUtc(t.deadline, 1));
     lines.push("BEGIN:VEVENT");
     lines.push(`UID:${t.id}@nudge`);
     lines.push(`DTSTAMP:${now}`);
-    lines.push(`DTSTART:${fmtDate(t.scheduledStart)}`);
-    lines.push(`DTEND:${fmtDate(t.scheduledEnd)}`);
-    lines.push(fold(`SUMMARY:${escape(title)}`));
+    lines.push(`DTSTART;VALUE=DATE:${dtStart}`);
+    lines.push(`DTEND;VALUE=DATE:${dtEnd}`);
+    lines.push(fold(`SUMMARY:${escape(title)} · due`));
     if (t.notes) lines.push(fold(`DESCRIPTION:${escape(t.notes)}`));
     if (t.status === "done") lines.push("STATUS:COMPLETED");
-    if (t.status === "doing") lines.push("STATUS:CONFIRMED");
+    lines.push("TRANSP:TRANSPARENT");
     lines.push("END:VEVENT");
   }
 

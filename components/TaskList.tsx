@@ -594,24 +594,6 @@ function StatusIcon({ status, size = 16 }: { status: Task["status"]; size?: numb
   return <Circle style={base} strokeWidth={1.5} className="text-[var(--faint)]" />;
 }
 
-function ScheduledChip({ task, refresh }: { task: Task; refresh: () => Promise<void> }) {
-  if (!task.scheduledStart) return null;
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        if (!confirm("Unschedule? It will be re-placed on the next scheduler pass.")) return;
-        await patchTask(task.id, { scheduledStart: null, scheduledEnd: null });
-        await refresh();
-      }}
-      className="rounded-md bg-[var(--accent-soft)]/40 px-1.5 py-0.5 font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)]/70"
-      title="Click to unschedule"
-    >
-      {format(task.scheduledStart, "EEE HH:mm")}
-    </button>
-  );
-}
-
 function DeadlineChip({
   task,
   refresh,

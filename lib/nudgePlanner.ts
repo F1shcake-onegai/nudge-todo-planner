@@ -13,19 +13,25 @@ const INTENSITY_COUNT: Record<string, number> = {
   intense: 8,
 };
 
-const JITTER_MS = 5 * 60 * 1000; // ±5 min per slot
+// Jitter scales with slot density: ±20% of the inter-slot gap, clamped so
+// sparse schedules don't drift wildly and dense ones stay noticeably random.
+const JITTER_RATIO = 0.2;
+const JITTER_MIN_MS = 8 * 60 * 1000; // 8 minutes
+const JITTER_MAX_MS = 45 * 60 * 1000; // 45 minutes
 
 function slotTimes(now: Date, workStart: number, workEnd: number, count: number): Date[] {
   if (count <= 0 || workEnd <= workStart) return [];
   const day = startOfDay(now);
   const windowHours = workEnd - workStart;
   const slotHours = windowHours / count;
+  const gapMs = slotHours * 3_600_000;
+  const jitterMs = Math.max(JITTER_MIN_MS, Math.min(JITTER_MAX_MS, gapMs * JITTER_RATIO));
   return Array.from({ length: count }, (_, i) => {
     const hour = workStart + slotHours * (i + 0.5);
     const base = new Date(day);
     base.setHours(0, 0, 0, 0);
     const ms = base.getTime() + hour * 3_600_000;
-    const jitter = (Math.random() - 0.5) * 2 * JITTER_MS;
+    const jitter = (Math.random() - 0.5) * 2 * jitterMs;
     return new Date(ms + jitter);
   });
 }
