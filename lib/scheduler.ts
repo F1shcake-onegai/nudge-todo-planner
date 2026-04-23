@@ -10,7 +10,7 @@ export type SchedulerOptions = {
   maxBlockMinutes?: number;
   horizonDays?: number;
   now?: Date;
-  externalBusy?: Busy[];  // e.g. Google calendar busy slots
+  externalBusy?: Busy[];  // reserved for future external calendar integrations
 };
 
 export function parseHHMM(s: string | undefined | null, fallback: number) {
@@ -91,12 +91,14 @@ export async function scheduleAllPending(opts: SchedulerOptions = {}) {
     }
   }
 
-  for (const p of placements) {
-    await db
-      .update(schema.tasks)
-      .set({ scheduledStart: p.start, scheduledEnd: p.end })
-      .where(eq(schema.tasks.id, p.id));
-  }
+  await Promise.all(
+    placements.map((p) =>
+      db
+        .update(schema.tasks)
+        .set({ scheduledStart: p.start, scheduledEnd: p.end })
+        .where(eq(schema.tasks.id, p.id)),
+    ),
+  );
 
   return placements;
 }
@@ -129,9 +131,9 @@ function nextFreeSlot(
       continue;
     }
 
-    // find first busy block overlapping cursor's day after cursor
+    // first busy block that overlaps [cursor, dayEnd]
     const overlap = busy.find(
-      (b) => isBefore(b.start, dayEnd) && isAfter(b.end, cursor) && isBefore(b.start, dayEnd),
+      (b) => isBefore(b.start, dayEnd) && isAfter(b.end, cursor),
     );
 
     if (!overlap || !isBefore(overlap.start, dayEnd)) {

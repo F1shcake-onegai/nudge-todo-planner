@@ -1,7 +1,7 @@
 import { db, schema } from "@/lib/db/client";
-import { eq } from "drizzle-orm";
-import { isNotNull } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
+import { SETTINGS_ID } from "@/lib/db/schema";
 
 function fmtDate(d: Date) {
   // UTC basic format: YYYYMMDDTHHMMSSZ
@@ -75,14 +75,14 @@ export async function ensureFeedToken() {
   const existing = await db.query.settings.findFirst();
   if (existing?.feedToken) return existing.feedToken;
   if (!existing) {
-    await db.insert(schema.settings).values({ id: "singleton" });
+    await db.insert(schema.settings).values({ id: SETTINGS_ID });
   }
   const token = randomBytes(24).toString("base64url");
-  await db.update(schema.settings).set({ feedToken: token }).where(eq(schema.settings.id, "singleton"));
+  await db.update(schema.settings).set({ feedToken: token }).where(eq(schema.settings.id, SETTINGS_ID));
   return token;
 }
 
 export async function regenerateFeedToken() {
-  await db.update(schema.settings).set({ feedToken: null }).where(eq(schema.settings.id, "singleton"));
+  await db.update(schema.settings).set({ feedToken: null }).where(eq(schema.settings.id, SETTINGS_ID));
   return ensureFeedToken();
 }

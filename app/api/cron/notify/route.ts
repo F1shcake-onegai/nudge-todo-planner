@@ -1,5 +1,5 @@
 import { db, schema } from "@/lib/db/client";
-import { and, eq, gt, isNotNull, isNull, lte } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { sendPush } from "@/lib/push";
 import { addMinutes } from "date-fns";
 import { parseHHMM } from "@/lib/scheduler";
@@ -37,29 +37,47 @@ async function runNotifications() {
   if (!due.length) return { sent: 0, matched: 0 };
 
   const subs = await db.query.subscriptions.findMany();
-  let sent = 0;
-  for (const task of due) {
-    for (const s of subs) {
-      const r = await sendPush(
-        { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-        {
-          title: task.title,
-          body: `Starts in a few minutes.`,
-          url: "/",
-          tag: `task-${task.id}`,
-        },
-      );
-      if (r.ok) sent++;
-      // prune dead subscriptions
-      if (!r.ok && (r.statusCode === 404 || r.statusCode === 410)) {
-        await db.delete(schema.subscriptions).where(eq(schema.subscriptions.endpoint, s.endpoint));
-      }
-    }
-    await db
+
+  // Fan out every (task, sub) push in parallel — pushes are independent.
+  const results = await Promise.all(
+    due.flatMap((task) =>
+      subs.map(async (s) => {
+        const r = await sendPush(
+          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+          {
+            title: task.title,
+            body: "Starts in a few minutes.",
+            url: "/",
+            tag: `task-${task.id}`,
+          },
+        );
+        return { r, endpoint: s.endpoint };
+      }),
+    ),
+  );
+
+  const sent = results.filter((x) => x.r.ok).length;
+  const deadEndpoints = [
+    ...new Set(
+      results
+        .filter((x) => !x.r.ok && (x.r.statusCode === 404 || x.r.statusCode === 410))
+        .map((x) => x.endpoint),
+    ),
+  ];
+
+  const cleanup: Promise<unknown>[] = [];
+  if (deadEndpoints.length) {
+    cleanup.push(
+      db.delete(schema.subscriptions).where(inArray(schema.subscriptions.endpoint, deadEndpoints)),
+    );
+  }
+  cleanup.push(
+    db
       .update(schema.tasks)
       .set({ notifiedAt: new Date() })
-      .where(eq(schema.tasks.id, task.id));
-  }
+      .where(inArray(schema.tasks.id, due.map((t) => t.id))),
+  );
+  await Promise.all(cleanup);
 
   return { sent, matched: due.length };
 }

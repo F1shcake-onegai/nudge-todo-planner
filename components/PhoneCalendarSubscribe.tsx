@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Copy, RefreshCw, Smartphone, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 type FeedInfo = { token: string; httpsUrl: string; webcal: string };
 
@@ -10,6 +11,7 @@ export function PhoneCalendarSubscribe() {
   const [info, setInfo] = useState<FeedInfo | null>(null);
   const [copied, setCopied] = useState(false);
   const [rotating, setRotating] = useState(false);
+  const [confirmRotate, setConfirmRotate] = useState(false);
 
   async function load() {
     const r = await fetch("/api/calendar/feed-url").then((r) => r.json());
@@ -19,8 +21,7 @@ export function PhoneCalendarSubscribe() {
     load();
   }, []);
 
-  async function rotate() {
-    if (!confirm("Regenerate the feed URL? Any calendars currently subscribed will stop updating.")) return;
+  async function doRotate() {
     setRotating(true);
     try {
       const r = await fetch("/api/calendar/feed-url", { method: "POST" }).then((r) => r.json());
@@ -68,7 +69,7 @@ export function PhoneCalendarSubscribe() {
         </button>
         <button
           type="button"
-          onClick={rotate}
+          onClick={() => setConfirmRotate(true)}
           disabled={rotating}
           className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-[var(--muted)] hover:bg-[var(--bg)]"
           aria-label="Rotate token"
@@ -76,6 +77,22 @@ export function PhoneCalendarSubscribe() {
           {rotating ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirmRotate}
+        options={{
+          title: "Regenerate feed URL?",
+          description:
+            "The current URL will stop working. Any devices subscribed to it will stop receiving updates until you share the new URL with them.",
+          confirmLabel: "Regenerate",
+          danger: true,
+        }}
+        onCancel={() => setConfirmRotate(false)}
+        onConfirm={async () => {
+          setConfirmRotate(false);
+          await doRotate();
+        }}
+      />
 
       <details className="text-sm text-[var(--muted)]">
         <summary className="cursor-pointer">How does this work?</summary>

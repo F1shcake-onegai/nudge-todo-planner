@@ -3,14 +3,16 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { tools } from "./tools";
-import { buildContext, buildSystemPrompt } from "./prompt";
-import { db, schema } from "@/lib/db/client";
+import { buildContext, buildSystemPrompt, buildTurnContext } from "./prompt";
+import type { Settings } from "@/lib/db/schema";
 import { getSecret } from "@/lib/secrets";
 
 type ProviderId = "anthropic" | "openai" | "google";
 
-async function resolveModel(override?: { provider?: ProviderId; model?: string }): Promise<LanguageModel> {
-  const settings = await db.query.settings.findFirst();
+async function resolveModel(
+  settings: Settings | undefined,
+  override?: { provider?: ProviderId; model?: string },
+): Promise<LanguageModel> {
   const provider = (override?.provider ?? settings?.llmProvider ?? process.env.NUDGE_DEFAULT_PROVIDER ?? "anthropic") as ProviderId;
   const modelId = override?.model ?? settings?.llmModel ?? process.env.NUDGE_DEFAULT_MODEL ?? "claude-sonnet-4-6";
 
@@ -36,8 +38,8 @@ async function resolveModel(override?: { provider?: ProviderId; model?: string }
 }
 
 /**
- * Pick a cheaper model for short edit messages.
- * Heuristic: messages under 120 chars that don't look like a brain-dump.
+ * Route short edit messages to the cheaper edit model.
+ * Heuristic: single-line, < 120 chars, contains an edit verb.
  */
 function shouldRouteToEditModel(lastUserContent: string) {
   return (
@@ -51,23 +53,22 @@ export async function runAgent(userMessages: ModelMessage[]) {
   const ctx = await buildContext();
   const systemText = buildSystemPrompt(ctx);
 
-  const settings = await db.query.settings.findFirst();
   const lastUserMsg = [...userMessages].reverse().find((m) => m.role === "user");
   const lastContent = typeof lastUserMsg?.content === "string" ? lastUserMsg.content : "";
 
-  const override = shouldRouteToEditModel(lastContent) && settings?.llmEditModel
-    ? { model: settings.llmEditModel }
+  const override = shouldRouteToEditModel(lastContent) && ctx.settings?.llmEditModel
+    ? { model: ctx.settings.llmEditModel }
     : undefined;
 
-  const model = await resolveModel(override);
+  const model = await resolveModel(ctx.settings ?? undefined, override);
 
-  // Build messages with system + prompt caching (Anthropic only reads providerOptions).
   const messages: ModelMessage[] = [
     {
       role: "system",
       content: systemText,
       providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
     },
+    { role: "user", content: buildTurnContext(ctx.settings?.timezone) },
     ...userMessages,
   ];
 

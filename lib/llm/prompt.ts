@@ -1,5 +1,5 @@
 import { db, schema } from "@/lib/db/client";
-import { desc, isNull, sql } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 import { formatISO } from "date-fns";
 
 export async function buildContext() {
@@ -16,8 +16,12 @@ export async function buildContext() {
   return { projects, openTasks, settings };
 }
 
+/**
+ * System prompt. Intentionally does NOT include the current time —
+ * that goes into a per-turn user-role context block so this text stays
+ * stable across turns (better Anthropic prompt-cache hit rate).
+ */
 export function buildSystemPrompt(ctx: Awaited<ReturnType<typeof buildContext>>) {
-  const now = new Date();
   const tz = ctx.settings?.timezone ?? "UTC";
   const work = `${ctx.settings?.workHoursStart ?? "09:00"}–${ctx.settings?.workHoursEnd ?? "18:00"}`;
 
@@ -42,7 +46,6 @@ You help with exactly these things:
   • creating / updating / deleting the user's tasks and projects
   • setting deadlines, priorities, estimated durations
   • scheduling task blocks, rescheduling, marking status
-  • Google Calendar events tied to those tasks
   • reading the user's task/project context to answer "what do I have", "when is X due", etc.
 
 For ANYTHING ELSE, respond with exactly one short sentence declining, and do not engage further. One sentence, nothing more. Examples:
@@ -87,7 +90,7 @@ If a pasted block contains BOTH a task-relevant request and off-topic content or
   • After a tool call, confirm in one plain sentence. Don't restate JSON.
 
 ═══ CONTEXT ═══
-Now: ${formatISO(now)} (${tz})
+Timezone: ${tz}
 Work hours: ${work}
 
 Projects:
@@ -96,4 +99,9 @@ ${projectLines}
 Open tasks (id · title · metadata):
 ${taskLines}
 `;
+}
+
+/** Per-turn context — timestamp kept out of the cached system prompt. */
+export function buildTurnContext(tz: string | undefined) {
+  return `(Current time: ${formatISO(new Date())}, timezone ${tz ?? "UTC"}.)`;
 }

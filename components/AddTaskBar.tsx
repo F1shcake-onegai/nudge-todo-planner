@@ -2,8 +2,9 @@
 
 import type { Project } from "@/lib/db/schema";
 import { Plus, Loader2, ChevronDown, Check, Inbox } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useClickOutside } from "@/lib/hooks";
 
 export function AddTaskBar({
   projects,
@@ -79,23 +80,7 @@ function ProjectPicker({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    if (open) {
-      window.addEventListener("mousedown", onDoc);
-      window.addEventListener("keydown", onKey);
-      return () => {
-        window.removeEventListener("mousedown", onDoc);
-        window.removeEventListener("keydown", onKey);
-      };
-    }
-  }, [open]);
+  useClickOutside(ref, () => setOpen(false), open);
 
   const selected = value ? projects.find((p) => p.id === value) : null;
 

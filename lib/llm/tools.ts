@@ -4,17 +4,6 @@ import { and, eq, inArray, like } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { newId } from "@/lib/utils";
 import { scheduleAllPending } from "@/lib/scheduler";
-import { addDays } from "date-fns";
-
-async function externalBusy() {
-  try {
-    const { getBusyWindows } = await import("@/lib/google");
-    const now = new Date();
-    return await getBusyWindows(now.toISOString(), addDays(now, 14).toISOString());
-  } catch {
-    return [];
-  }
-}
 
 // ---- Shared sub-schemas ----
 
@@ -73,11 +62,18 @@ export const create_tasks = tool({
     "Call this when the user brain-dumps new work.",
   inputSchema: z.object({ tasks: z.array(TaskIn).min(1) }),
   execute: async ({ tasks }) => {
+    const projectsByName = new Map<string, { id: string; name: string }>();
+    const uniqueNames = [...new Set(tasks.map((t) => t.projectName))];
+    const resolved = await Promise.all(uniqueNames.map((n) => upsertProject(n)));
+    resolved.forEach((p) => projectsByName.set(p.name, p));
+
+    const rows: (typeof schema.tasks.$inferInsert)[] = [];
     const created: { id: string; title: string; project: string }[] = [];
+
     for (const t of tasks) {
-      const project = await upsertProject(t.projectName);
+      const project = projectsByName.get(t.projectName)!;
       const id = newId("tsk");
-      await db.insert(schema.tasks).values({
+      rows.push({
         id,
         projectId: project.id,
         title: t.title,
@@ -87,7 +83,7 @@ export const create_tasks = tool({
         deadline: t.deadlineIso ? new Date(t.deadlineIso) : undefined,
       });
       for (const s of t.subtasks) {
-        await db.insert(schema.tasks).values({
+        rows.push({
           id: newId("tsk"),
           projectId: project.id,
           parentTaskId: id,
@@ -99,7 +95,9 @@ export const create_tasks = tool({
       }
       created.push({ id, title: t.title, project: project.name });
     }
-    const placed = await scheduleAllPending({ externalBusy: await externalBusy() });
+
+    if (rows.length) await db.insert(schema.tasks).values(rows);
+    const placed = await scheduleAllPending();
     return {
       created,
       scheduled: placed.length,
@@ -146,7 +144,7 @@ export const update_tasks = tool({
       .where(inArray(schema.tasks.id, matches.map((m) => m.id)));
 
     if (patch.rescheduleNow || patch.deadlineIso !== undefined) {
-      await scheduleAllPending({ externalBusy: await externalBusy() });
+      await scheduleAllPending();
     }
 
     return { updated: matches.length, message: `Updated ${matches.length} task(s).` };
@@ -178,55 +176,8 @@ export const delete_tasks = tool({
   },
 });
 
-// ---- Calendar event tools (stubbed when Google not linked) ----
-
-export const create_event = tool({
-  description:
-    "Create a Google Calendar event for a scheduled task block. Only works if Google Calendar is linked.",
-  inputSchema: z.object({
-    taskId: z.string(),
-    startIso: z.string().datetime(),
-    endIso: z.string().datetime(),
-    title: z.string(),
-  }),
-  execute: async ({ taskId, startIso, endIso, title }) => {
-    const { createCalendarEvent } = await import("@/lib/google");
-    const res = await createCalendarEvent({ taskId, start: new Date(startIso), end: new Date(endIso), title });
-    return res;
-  },
-});
-
-export const update_event = tool({
-  description: "Update a Google Calendar event linked to a task.",
-  inputSchema: z.object({
-    taskId: z.string(),
-    patch: z.object({
-      startIso: z.string().datetime().optional(),
-      endIso: z.string().datetime().optional(),
-      title: z.string().optional(),
-    }),
-  }),
-  execute: async ({ taskId, patch }) => {
-    const { updateCalendarEvent } = await import("@/lib/google");
-    return updateCalendarEvent(taskId, patch);
-  },
-});
-
-export const delete_event = tool({
-  description: "Delete a Google Calendar event linked to a task.",
-  inputSchema: z.object({ taskId: z.string(), confirm: z.boolean().default(false) }),
-  execute: async ({ taskId, confirm }) => {
-    if (!confirm) return { pending: true, message: "Awaiting confirmation." };
-    const { deleteCalendarEvent } = await import("@/lib/google");
-    return deleteCalendarEvent(taskId);
-  },
-});
-
 export const tools = {
   create_tasks,
   update_tasks,
   delete_tasks,
-  create_event,
-  update_event,
-  delete_event,
 };

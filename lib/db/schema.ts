@@ -1,6 +1,9 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
+/** The single-row-per-table id for settings. Single-user app. */
+export const SETTINGS_ID = "singleton";
+
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -19,7 +22,6 @@ export const tasks = sqliteTable("tasks", {
   deadline: integer("deadline", { mode: "timestamp_ms" }),
   scheduledStart: integer("scheduled_start", { mode: "timestamp_ms" }),
   scheduledEnd: integer("scheduled_end", { mode: "timestamp_ms" }),
-  googleEventId: text("google_event_id"),
   status: text("status", { enum: ["todo", "doing", "done"] }).notNull().default("todo"),
   notifiedAt: integer("notified_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
@@ -43,16 +45,13 @@ export const subscriptions = sqliteTable("subscriptions", {
 });
 
 export const settings = sqliteTable("settings", {
-  id: text("id").primaryKey().default("singleton"),
+  id: text("id").primaryKey().default(SETTINGS_ID),
   workHoursStart: text("work_hours_start").notNull().default("09:00"),
   workHoursEnd: text("work_hours_end").notNull().default("18:00"),
   timezone: text("timezone").notNull().default("UTC"),
   llmProvider: text("llm_provider").notNull().default("anthropic"),
   llmModel: text("llm_model").notNull().default("claude-sonnet-4-6"),
   llmEditModel: text("llm_edit_model").default("claude-haiku-4-5-20251001"),
-  googleLinked: integer("google_linked", { mode: "boolean" }).notNull().default(false),
-  googleReadCalendarIds: text("google_read_calendar_ids"), // JSON array
-  googleWriteCalendarId: text("google_write_calendar_id"),
   feedToken: text("feed_token"), // random token protecting the iCal feed URL
 });
 
@@ -60,15 +59,6 @@ export const providerKeys = sqliteTable("provider_keys", {
   provider: text("provider").primaryKey(), // anthropic | openai | google | ollama
   encryptedKey: text("encrypted_key").notNull(),
   baseUrl: text("base_url"),
-});
-
-export const googleTokens = sqliteTable("google_tokens", {
-  id: text("id").primaryKey().default("singleton"),
-  accessToken: text("access_token").notNull(),
-  refreshToken: text("refresh_token"),
-  scope: text("scope"),
-  tokenType: text("token_type"),
-  expiryDate: integer("expiry_date", { mode: "timestamp_ms" }),
 });
 
 // ---- Relations ----

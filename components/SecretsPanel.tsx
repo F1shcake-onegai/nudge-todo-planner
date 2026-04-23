@@ -19,11 +19,6 @@ const GROUPS: { title: string; description?: string; keys: string[] }[] = [
     keys: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
   },
   {
-    title: "Google Calendar OAuth",
-    description: "Required to link Google Calendar. Create OAuth credentials in Google Cloud Console.",
-    keys: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
-  },
-  {
     title: "Web Push (VAPID)",
     description: "Use Generate to create a fresh key pair. Subject is typically 'mailto:you@domain'.",
     keys: ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"],
@@ -34,7 +29,6 @@ const PLAIN_TEXT_KEYS = new Set([
   "VAPID_PUBLIC_KEY",
   "VAPID_SUBJECT",
   "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
-  "GOOGLE_CLIENT_ID",
 ]);
 
 export function SecretsPanel() {

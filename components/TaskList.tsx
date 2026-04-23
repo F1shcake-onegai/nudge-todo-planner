@@ -16,12 +16,15 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, isPast, isToday, isTomorrow } from "date-fns";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useClickOutside } from "@/lib/hooks";
 
 type Props = {
   projects: Project[];
   tasks: Task[];
-  onRefresh: () => void | Promise<void>;
+  onRefresh: () => Promise<void>;
 };
+
+type Refresh = () => Promise<void>;
 
 async function patchTask(id: string, patch: Record<string, unknown>) {
   await fetch(`/api/tasks/${id}`, {
@@ -58,29 +61,31 @@ export function TaskList({ projects, tasks, onRefresh }: Props) {
   const [renamingUnassigned, setRenamingUnassigned] = useState(false);
   const [confirmDeleteProject, setConfirmDeleteProject] = useState<Project | null>(null);
   const [confirmClearUnassigned, setConfirmClearUnassigned] = useState(false);
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState<Task | null>(null);
 
-  const grouped = useMemo(() => {
+  const { grouped, groupKeys, subtasksByParent } = useMemo(() => {
     const byProject = new Map<string | null, Task[]>();
+    const byParent = new Map<string, Task[]>();
     for (const t of tasks) {
-      if (t.parentTaskId) continue;
+      if (t.parentTaskId) {
+        if (!byParent.has(t.parentTaskId)) byParent.set(t.parentTaskId, []);
+        byParent.get(t.parentTaskId)!.push(t);
+        continue;
+      }
       const key = t.projectId ?? null;
       if (!byProject.has(key)) byProject.set(key, []);
       byProject.get(key)!.push(t);
     }
-    return byProject;
-  }, [tasks]);
-
-  const projectOrder = projects.map((p) => p.id);
-  const groupKeys = [...grouped.keys()].sort((a, b) => {
-    if (a === b) return 0;
-    if (a === null) return -1;
-    if (b === null) return 1;
-    return projectOrder.indexOf(a) - projectOrder.indexOf(b);
-  });
-
-  async function refresh() {
-    await onRefresh();
-  }
+    // Sort project groups by projects[] order; New Task ("null") first.
+    const orderIndex = new Map<string, number>(projects.map((p, i) => [p.id, i]));
+    const keys = [...byProject.keys()].sort((a, b) => {
+      if (a === b) return 0;
+      if (a === null) return -1;
+      if (b === null) return 1;
+      return (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0);
+    });
+    return { grouped: byProject, groupKeys: keys, subtasksByParent: byParent };
+  }, [tasks, projects]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -125,7 +130,7 @@ export function TaskList({ projects, tasks, onRefresh }: Props) {
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ name: trimmed }),
                         });
-                        await refresh();
+                        await onRefresh();
                       }
                       setRenamingProjectId(null);
                     } else {
@@ -135,7 +140,7 @@ export function TaskList({ projects, tasks, onRefresh }: Props) {
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ name: trimmed, absorbUnassigned: true }),
                         });
-                        await refresh();
+                        await onRefresh();
                       }
                       setRenamingUnassigned(false);
                     }
@@ -155,8 +160,8 @@ export function TaskList({ projects, tasks, onRefresh }: Props) {
                 <TaskRow
                   key={t.id}
                   task={t}
-                  allTasks={tasks}
-                  refresh={refresh}
+                  subtasksByParent={subtasksByParent}
+                  refresh={onRefresh}
                   openMenu={(task, x, y) => setMenu({ task, x, y })}
                   trigger={trigger}
                   clearTrigger={() => setTrigger(null)}
@@ -171,9 +176,13 @@ export function TaskList({ projects, tasks, onRefresh }: Props) {
         <ContextMenu
           menu={menu}
           onClose={() => setMenu(null)}
-          refresh={refresh}
+          refresh={onRefresh}
           onTrigger={(kind) => {
             setTrigger({ taskId: menu.task.id, kind });
+            setMenu(null);
+          }}
+          onRequestDelete={() => {
+            setConfirmDeleteTask(menu.task);
             setMenu(null);
           }}
         />
@@ -182,7 +191,7 @@ export function TaskList({ projects, tasks, onRefresh }: Props) {
         <ProjectContextMenu
           menu={projectMenu}
           onClose={() => setProjectMenu(null)}
-          refresh={refresh}
+          refresh={onRefresh}
           onRename={() => {
             if (projectMenu.project) {
               setRenamingProjectId(projectMenu.project.id);
@@ -232,7 +241,7 @@ export function TaskList({ projects, tasks, onRefresh }: Props) {
             method: "DELETE",
           });
           setConfirmDeleteProject(null);
-          await refresh();
+          await onRefresh();
         }}
       />
 
@@ -263,7 +272,31 @@ export function TaskList({ projects, tasks, onRefresh }: Props) {
             body: JSON.stringify({ action: "delete", projectId: null }),
           });
           setConfirmClearUnassigned(false);
-          await refresh();
+          await onRefresh();
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDeleteTask}
+        options={{
+          title: confirmDeleteTask ? `Delete "${confirmDeleteTask.title}"?` : "",
+          description: confirmDeleteTask ? (
+            (() => {
+              const subCount = subtasksByParent.get(confirmDeleteTask.id)?.length ?? 0;
+              return subCount
+                ? `This will also delete ${subCount} subtask${subCount === 1 ? "" : "s"}. This can't be undone.`
+                : "This can't be undone.";
+            })()
+          ) : null,
+          confirmLabel: "Delete",
+          danger: true,
+        }}
+        onCancel={() => setConfirmDeleteTask(null)}
+        onConfirm={async () => {
+          if (!confirmDeleteTask) return;
+          await deleteTask(confirmDeleteTask.id);
+          setConfirmDeleteTask(null);
+          await onRefresh();
         }}
       />
     </div>
@@ -308,7 +341,7 @@ function ProjectRenameInput({
 
 function TaskRow({
   task,
-  allTasks,
+  subtasksByParent,
   refresh,
   openMenu,
   trigger,
@@ -316,14 +349,14 @@ function TaskRow({
   isSub,
 }: {
   task: Task;
-  allTasks: Task[];
-  refresh: () => Promise<void>;
+  subtasksByParent: Map<string, Task[]>;
+  refresh: Refresh;
   openMenu: (task: Task, x: number, y: number) => void;
   trigger: ExternalTrigger;
   clearTrigger: () => void;
   isSub?: boolean;
 }) {
-  const subs = allTasks.filter((s) => s.parentTaskId === task.id);
+  const subs = subtasksByParent.get(task.id) ?? [];
   const [open, setOpen] = useState(subs.length > 0);
   const [renaming, setRenaming] = useState(false);
   const [editingDeadline, setEditingDeadline] = useState(false);
@@ -437,7 +470,7 @@ function TaskRow({
             <TaskRow
               key={s.id}
               task={s}
-              allTasks={allTasks}
+              subtasksByParent={subtasksByParent}
               refresh={refresh}
               openMenu={openMenu}
               trigger={trigger}
@@ -587,7 +620,7 @@ function DeadlineChip({
   onEditingChange,
 }: {
   task: Task;
-  refresh: () => Promise<void>;
+  refresh: Refresh;
   overdue: boolean;
   editing: boolean;
   onEditingChange: (b: boolean) => void;
@@ -678,34 +711,21 @@ function ContextMenu({
   onClose,
   refresh,
   onTrigger,
+  onRequestDelete,
 }: {
   menu: { task: Task; x: number; y: number };
   onClose: () => void;
-  refresh: () => Promise<void>;
+  refresh: Refresh;
   onTrigger: (kind: "addSubtask" | "rename" | "setDeadline") => void;
+  onRequestDelete: () => void;
 }) {
   const [submenu, setSubmenu] = useState<"priority" | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("mousedown", onDoc);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDoc);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useClickOutside(ref, onClose);
 
   const done = menu.task.status === "done";
   const doing = menu.task.status === "doing";
 
-  // clamp to viewport
   const x = Math.min(menu.x, (typeof window !== "undefined" ? window.innerWidth : 1000) - 220);
   const y = Math.min(menu.y, (typeof window !== "undefined" ? window.innerHeight : 1000) - 320);
 
@@ -719,11 +739,8 @@ function ContextMenu({
     await refresh();
     onClose();
   }
-  async function del() {
-    if (!confirm(`Delete "${menu.task.title}"?`)) return;
-    await deleteTask(menu.task.id);
-    await refresh();
-    onClose();
+  function del() {
+    onRequestDelete();
   }
 
   return (
@@ -845,26 +862,12 @@ function ProjectContextMenu({
 }: {
   menu: { project: Project | null; x: number; y: number };
   onClose: () => void;
-  refresh: () => Promise<void>;
+  refresh: Refresh;
   onRename: () => void;
   onRequestDelete: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("mousedown", onDoc);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDoc);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useClickOutside(ref, onClose);
 
   const x = Math.min(menu.x, (typeof window !== "undefined" ? window.innerWidth : 1000) - 240);
   const y = Math.min(menu.y, (typeof window !== "undefined" ? window.innerHeight : 1000) - 200);

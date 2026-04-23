@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CalendarCheck, ExternalLink } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { NotificationsToggle } from "@/components/NotificationsToggle";
-import { CalendarPicker } from "@/components/CalendarPicker";
 import { SecretsPanel } from "@/components/SecretsPanel";
 import { PhoneCalendarSubscribe } from "@/components/PhoneCalendarSubscribe";
 import { cn } from "@/lib/utils";
@@ -16,9 +15,6 @@ type Settings = {
   llmProvider: string;
   llmModel: string;
   llmEditModel: string | null;
-  googleLinked: boolean;
-  googleReadCalendarIds: string | null;
-  googleWriteCalendarId: string | null;
 };
 
 const PROVIDER_MODELS: Record<string, string[]> = {
@@ -105,49 +101,6 @@ export default function SettingsPage() {
         <p className="mt-2 text-sm text-[var(--muted)]">
           Short edits like &ldquo;move X to Monday&rdquo; are routed to the cheaper edit model automatically.
         </p>
-      </Section>
-
-      <Section title="Google Calendar">
-        {s.googleLinked ? (
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-2 text-sm">
-              <CalendarCheck className="size-4 text-[var(--accent)]" />
-              Linked.{" "}
-              <button
-                type="button"
-                onClick={async () => {
-                  await fetch("/api/google/calendars", { method: "DELETE" });
-                  location.reload();
-                }}
-                className="text-[var(--muted)] underline hover:text-[var(--text)]"
-              >
-                unlink
-              </button>
-            </div>
-            <CalendarPicker
-              readIds={s.googleReadCalendarIds ? JSON.parse(s.googleReadCalendarIds) : []}
-              writeId={s.googleWriteCalendarId}
-              onReadChange={(ids) => patch({ googleReadCalendarIds: JSON.stringify(ids) } as any)}
-              onWriteChange={(id) => patch({ googleWriteCalendarId: id } as any)}
-            />
-          </div>
-        ) : (
-          <>
-            <a
-              href="/api/google/link"
-              className={cn(
-                "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm",
-                "border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg)]",
-              )}
-            >
-              Link Google Calendar <ExternalLink className="size-3.5" />
-            </a>
-            <p className="mt-2 text-sm text-[var(--muted)]">
-              Requires <code className="font-mono text-xs">GOOGLE_CLIENT_ID</code> and{" "}
-              <code className="font-mono text-xs">GOOGLE_CLIENT_SECRET</code> in <code>.env.local</code>. See the README.
-            </p>
-          </>
-        )}
       </Section>
 
       <Section title="API keys">
