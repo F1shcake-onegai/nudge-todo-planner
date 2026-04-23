@@ -2,6 +2,43 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db/client";
 import { SESSION_COOKIE, clearSessionCookie, validateSession } from "@/lib/auth";
 
+/**
+ * CSRF guard. Reject state-changing cross-origin requests unless the caller
+ * presents a Bearer token (app clients). For browser usage, SameSite=Strict on
+ * the session cookie is the primary defense; this Origin/Referer check is
+ * belt-and-suspenders for request forgery via JS on other sites.
+ */
+function crossOriginMutation(req: NextRequest): boolean {
+  const method = req.method.toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false;
+
+  const origin = req.headers.get("origin");
+  const referer = req.headers.get("referer");
+  const hostHeader = req.headers.get("host") ?? "";
+  const authUrl = process.env.AUTH_URL ?? "";
+
+  const allowed = new Set<string>();
+  if (authUrl) {
+    try {
+      allowed.add(new URL(authUrl).origin);
+    } catch {}
+  }
+  // Allow same-origin via host header as a fallback (local dev without AUTH_URL set).
+  allowed.add(`http://${hostHeader}`);
+  allowed.add(`https://${hostHeader}`);
+
+  if (origin) return !allowed.has(origin);
+  if (referer) {
+    try {
+      return !allowed.has(new URL(referer).origin);
+    } catch {
+      return true;
+    }
+  }
+  // No Origin and no Referer on a mutating request — treat as suspicious.
+  return true;
+}
+
 // Paths that never require auth. Keep additions narrow.
 const PUBLIC_PREFIXES = [
   "/login",
@@ -66,7 +103,15 @@ export async function proxy(req: NextRequest) {
   const token = tokenFromRequest(req);
   const session = token ? await validateSession(token) : null;
 
-  if (session) return NextResponse.next();
+  if (session) {
+    // CSRF: if the session authed via cookie (not Bearer), require
+    // same-origin for mutating requests.
+    const viaCookie = !!req.cookies.get(SESSION_COOKIE)?.value;
+    if (viaCookie && crossOriginMutation(req)) {
+      return new NextResponse("Forbidden (cross-origin mutation)", { status: 403 });
+    }
+    return NextResponse.next();
+  }
 
   // Invalid or missing → redirect pages, 401 APIs, and proactively clear the
   // stale cookie if one was present so the browser stops sending it.
