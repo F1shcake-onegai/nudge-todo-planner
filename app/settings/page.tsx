@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { NotificationsToggle } from "@/components/NotificationsToggle";
 import { SecretsPanel } from "@/components/SecretsPanel";
 import { PhoneCalendarSubscribe } from "@/components/PhoneCalendarSubscribe";
+import { SecuritySection } from "@/components/SecuritySection";
 import { cn } from "@/lib/utils";
 
 type Settings = {
@@ -54,6 +55,10 @@ export default function SettingsPage() {
         <ArrowLeft className="size-4" /> Back
       </Link>
       <h1 className="display mt-4 text-3xl">Settings</h1>
+
+      <Section title="Security">
+        <SecuritySection />
+      </Section>
 
       <Section title="Notifications">
         <NotificationsToggle />

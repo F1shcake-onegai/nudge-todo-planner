@@ -53,6 +53,24 @@ export const settings = sqliteTable("settings", {
   llmModel: text("llm_model").notNull().default("claude-sonnet-4-6"),
   llmEditModel: text("llm_edit_model").default("claude-haiku-4-5-20251001"),
   feedToken: text("feed_token"), // random token protecting the iCal feed URL
+  bootstrapped: integer("bootstrapped", { mode: "boolean" }).notNull().default(false),
+});
+
+export const credentials = sqliteTable("credentials", {
+  id: text("id").primaryKey().default(SETTINGS_ID),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(), // random 32-byte hex token (acts as the session token)
+  label: text("label", { enum: ["browser", "app", "caldav"] }).notNull().default("browser"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
 });
 
 export const providerKeys = sqliteTable("provider_keys", {
@@ -78,3 +96,5 @@ export type NewProject = typeof projects.$inferInsert;
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type Settings = typeof settings.$inferSelect;
+export type Credentials = typeof credentials.$inferSelect;
+export type Session = typeof sessions.$inferSelect;

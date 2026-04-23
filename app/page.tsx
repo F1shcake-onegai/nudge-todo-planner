@@ -10,9 +10,11 @@ import { AddTaskBar } from "@/components/AddTaskBar";
 import { CalendarSubscribeBanner } from "@/components/CalendarSubscribeBanner";
 import type { Project, Task } from "@/lib/db/schema";
 import Link from "next/link";
-import { Settings, Sparkles } from "lucide-react";
+import { Settings, Sparkles, LogOut } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const router = useRouter();
   const { messages, sendMessage, status, stop, setMessages } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
@@ -58,13 +60,28 @@ export default function Home() {
           <Sparkles className="size-4 text-[var(--accent)]" />
           <span className="display-wide text-lg">nudge</span>
         </div>
-        <Link
-          href="/settings"
-          className="rounded-xl p-2 text-[var(--muted)] hover:bg-[var(--surface)]"
-          aria-label="Settings"
-        >
-          <Settings className="size-4" />
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/settings"
+            className="rounded-xl p-2 text-[var(--muted)] hover:bg-[var(--surface)]"
+            aria-label="Settings"
+          >
+            <Settings className="size-4" />
+          </Link>
+          <button
+            type="button"
+            onClick={async () => {
+              await fetch("/api/auth/logout", { method: "POST" });
+              router.replace("/login");
+              router.refresh();
+            }}
+            className="rounded-xl p-2 text-[var(--muted)] hover:bg-[var(--surface)]"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut className="size-4" />
+          </button>
+        </div>
       </header>
 
       <div className="flex flex-1 min-h-0">
