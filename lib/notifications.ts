@@ -1,51 +1,59 @@
 import { db, schema } from "@/lib/db/client";
-import { and, eq, gt, inArray, isNotNull, isNull, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { sendPush } from "@/lib/push";
-import { addMinutes } from "date-fns";
+import { subMinutes } from "date-fns";
 import { parseHHMM } from "@/lib/scheduler";
+import { planToday, pruneOldNotifications } from "@/lib/nudgePlanner";
 
-const WINDOW_MINUTES = 15;
+const LATE_TOLERANCE_MIN = 15; // don't fire nudges more than 15 min late
 
 /**
- * Fire push notifications for tasks whose scheduled start falls in the next
- * WINDOW_MINUTES. Respects the user's work-hour window so we never push
- * at 3am. Safe to call repeatedly: rows are marked notifiedAt after success.
+ * Fire any pending notifications whose scheduledAt is in [now-15min, now].
+ * Safe to call repeatedly — rows are marked sentAt after a successful push.
+ * Quiet hours (outside workStart..workEnd) short-circuit to zero sends.
  */
 export async function runNotifications() {
   const now = new Date();
-  const upper = addMinutes(now, WINDOW_MINUTES);
 
+  // Respect quiet hours.
   const settings = await db.query.settings.findFirst();
   const workStart = parseHHMM(settings?.workHoursStart, 9);
   const workEnd = parseHHMM(settings?.workHoursEnd, 18);
   const nowFrac = now.getHours() + now.getMinutes() / 60;
-  const upperFrac = nowFrac + WINDOW_MINUTES / 60;
-  if (upperFrac < workStart || nowFrac >= workEnd) {
+  if (nowFrac < workStart || nowFrac >= workEnd) {
     return { sent: 0, matched: 0, reason: "outside-work-hours" as const };
   }
 
-  const due = await db.query.tasks.findMany({
+  const lowerBound = subMinutes(now, LATE_TOLERANCE_MIN);
+  const due = await db.query.notifications.findMany({
     where: and(
-      isNull(schema.tasks.notifiedAt),
-      isNotNull(schema.tasks.scheduledStart),
-      lte(schema.tasks.scheduledStart, upper),
-      gt(schema.tasks.scheduledStart, now),
+      isNull(schema.notifications.sentAt),
+      gte(schema.notifications.scheduledAt, lowerBound),
+      lte(schema.notifications.scheduledAt, now),
     ),
   });
   if (!due.length) return { sent: 0, matched: 0 };
 
   const subs = await db.query.subscriptions.findMany();
+  if (!subs.length) {
+    // Still mark as attempted so they don't fire stale after a late subscribe.
+    await db
+      .update(schema.notifications)
+      .set({ sentAt: now })
+      .where(inArray(schema.notifications.id, due.map((n) => n.id)));
+    return { sent: 0, matched: due.length, reason: "no-subscriptions" as const };
+  }
 
   const results = await Promise.all(
-    due.flatMap((task) =>
+    due.flatMap((n) =>
       subs.map(async (s) => {
         const r = await sendPush(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
           {
-            title: task.title,
-            body: "Starts in a few minutes.",
+            title: n.copyTitle,
+            body: n.copyBody,
             url: "/",
-            tag: `task-${task.id}`,
+            tag: `ntf-${n.id}`,
           },
         );
         return { r, endpoint: s.endpoint };
@@ -70,11 +78,32 @@ export async function runNotifications() {
   }
   cleanup.push(
     db
-      .update(schema.tasks)
-      .set({ notifiedAt: new Date() })
-      .where(inArray(schema.tasks.id, due.map((t) => t.id))),
+      .update(schema.notifications)
+      .set({ sentAt: now })
+      .where(inArray(schema.notifications.id, due.map((n) => n.id))),
   );
   await Promise.all(cleanup);
 
   return { sent, matched: due.length };
+}
+
+/**
+ * Daily-ish tick: replan today, run pending notifications, prune old rows.
+ * Called from the internal scheduler every 5 minutes. Replanning is cheap
+ * because planToday() diffs on the current state each time.
+ */
+export async function runSchedulerTick() {
+  try {
+    await planToday();
+  } catch (e) {
+    console.error("[nudge] planToday failed:", (e as Error).message);
+  }
+  const result = await runNotifications();
+  // once a day (loose — probability-based since ticks are 5 min apart)
+  if (Math.random() < 1 / 288) {
+    pruneOldNotifications(7).catch((e) =>
+      console.error("[nudge] prune failed:", (e as Error).message),
+    );
+  }
+  return result;
 }

@@ -1,5 +1,6 @@
 import { db, schema } from "@/lib/db/client";
 import { eq } from "drizzle-orm";
+import { replanAfterMutation } from "@/lib/nudgePlanner";
 
 export async function PATCH(
   req: Request,
@@ -34,6 +35,7 @@ export async function PATCH(
   }
 
   await db.update(schema.tasks).set(values).where(eq(schema.tasks.id, id));
+  replanAfterMutation();
   return Response.json({ ok: true });
 }
 
@@ -43,5 +45,6 @@ export async function DELETE(
 ) {
   const { id } = await ctx.params;
   await db.delete(schema.tasks).where(eq(schema.tasks.id, id));
+  replanAfterMutation();
   return Response.json({ ok: true });
 }

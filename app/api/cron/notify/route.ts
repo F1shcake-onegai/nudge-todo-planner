@@ -1,4 +1,4 @@
-import { runNotifications } from "@/lib/notifications";
+import { runSchedulerTick } from "@/lib/notifications";
 import { envOrFile } from "@/lib/env";
 
 function authorized(req: Request) {
@@ -10,7 +10,7 @@ function authorized(req: Request) {
 
 export async function GET(req: Request) {
   if (!authorized(req)) return new Response("Unauthorized", { status: 401 });
-  const result = await runNotifications();
+  const result = await runSchedulerTick();
   return Response.json(result);
 }
 

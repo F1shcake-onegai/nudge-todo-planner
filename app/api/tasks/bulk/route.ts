@@ -1,5 +1,6 @@
 import { db, schema } from "@/lib/db/client";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { replanAfterMutation } from "@/lib/nudgePlanner";
 
 type Body = {
   action: "complete" | "delete";
@@ -17,10 +18,12 @@ export async function POST(req: Request) {
       .update(schema.tasks)
       .set({ status: "done" })
       .where(and(projectCond, sql`${schema.tasks.status} != 'done'`));
+    replanAfterMutation();
     return Response.json({ ok: true });
   }
   if (action === "delete") {
     await db.delete(schema.tasks).where(projectCond);
+    replanAfterMutation();
     return Response.json({ ok: true });
   }
   return Response.json({ error: "unknown action" }, { status: 400 });

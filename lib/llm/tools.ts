@@ -4,6 +4,7 @@ import { and, eq, inArray, like } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { newId } from "@/lib/utils";
 import { scheduleAllPending } from "@/lib/scheduler";
+import { replanAfterMutation } from "@/lib/nudgePlanner";
 
 // ---- Shared sub-schemas ----
 
@@ -98,6 +99,7 @@ export const create_tasks = tool({
 
     if (rows.length) await db.insert(schema.tasks).values(rows);
     const placed = await scheduleAllPending();
+    replanAfterMutation();
     return {
       created,
       scheduled: placed.length,
@@ -147,6 +149,7 @@ export const update_tasks = tool({
       await scheduleAllPending();
     }
 
+    replanAfterMutation();
     return { updated: matches.length, message: `Updated ${matches.length} task(s).` };
   },
 });
@@ -172,6 +175,7 @@ export const delete_tasks = tool({
     }
 
     await db.delete(schema.tasks).where(inArray(schema.tasks.id, matches.map((m) => m.id)));
+    replanAfterMutation();
     return { deleted: matches.length, message: `Deleted ${matches.length} task(s).` };
   },
 });

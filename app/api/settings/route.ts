@@ -24,6 +24,7 @@ export async function PATCH(req: Request) {
     "llmProvider",
     "llmModel",
     "llmEditModel",
+    "notificationIntensity",
   ];
   const patch: Record<string, unknown> = {};
   for (const k of allowed) if (k in body) patch[k] = body[k];

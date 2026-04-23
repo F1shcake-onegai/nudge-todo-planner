@@ -78,6 +78,17 @@ export const sessions = sqliteTable("sessions", {
   userAgent: text("user_agent"),
 });
 
+export const notifications = sqliteTable("notifications", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id"),
+  projectId: text("project_id"),
+  scheduledAt: integer("scheduled_at", { mode: "timestamp_ms" }).notNull(),
+  copyTitle: text("copy_title").notNull(),
+  copyBody: text("copy_body").notNull(),
+  sentAt: integer("sent_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
 export const providerKeys = sqliteTable("provider_keys", {
   provider: text("provider").primaryKey(), // anthropic | openai | google | ollama
   encryptedKey: text("encrypted_key").notNull(),
@@ -103,3 +114,4 @@ export type NewTask = typeof tasks.$inferInsert;
 export type Settings = typeof settings.$inferSelect;
 export type Credentials = typeof credentials.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;

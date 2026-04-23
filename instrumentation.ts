@@ -6,16 +6,16 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const { runNotifications } = await import("./lib/notifications");
+  const { runSchedulerTick } = await import("./lib/notifications");
 
   let running = false;
   const tick = async () => {
     if (running) return;
     running = true;
     try {
-      await runNotifications();
+      await runSchedulerTick();
     } catch (e) {
-      console.error("[nudge] notification tick failed:", (e as Error).message);
+      console.error("[nudge] scheduler tick failed:", (e as Error).message);
     } finally {
       running = false;
     }

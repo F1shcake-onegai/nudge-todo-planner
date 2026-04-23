@@ -1,6 +1,7 @@
 import { db, schema } from "@/lib/db/client";
 import { desc } from "drizzle-orm";
 import { newId } from "@/lib/utils";
+import { replanAfterMutation } from "@/lib/nudgePlanner";
 
 export async function GET() {
   const [projects, tasks] = await Promise.all([
@@ -26,5 +27,6 @@ export async function POST(req: Request) {
     deadline: body.deadline ? new Date(body.deadline) : undefined,
     notes: body.notes ?? null,
   });
+  replanAfterMutation();
   return Response.json({ id, ok: true });
 }

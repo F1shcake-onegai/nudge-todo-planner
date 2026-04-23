@@ -7,6 +7,7 @@ import { NotificationsToggle } from "@/components/NotificationsToggle";
 import { SecretsPanel } from "@/components/SecretsPanel";
 import { PhoneCalendarSubscribe } from "@/components/PhoneCalendarSubscribe";
 import { SecuritySection } from "@/components/SecuritySection";
+import { IntensitySelector } from "@/components/IntensitySelector";
 import { cn } from "@/lib/utils";
 
 type Settings = {
@@ -64,6 +65,13 @@ export default function SettingsPage() {
         <NotificationsToggle />
         <p className="mt-2 text-sm text-[var(--muted)]">
           Install nudge as a PWA on your phone to receive push notifications when you&apos;re away from your laptop.
+        </p>
+      </Section>
+
+      <Section title="Nudge intensity">
+        <IntensitySelector />
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          Nudges are spread across work hours with small random jitter. Each nudge picks a different project to cycle attention across your work. Changing intensity replans the rest of today immediately.
         </p>
       </Section>
 
