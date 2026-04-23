@@ -1,26 +1,143 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-serif: var(--font-source-serif), ui-serif, Georgia, serif;
+
+  --color-cream: #f6f4ed;
+  --color-cream-2: #ece9dd;
+  --color-ink: #282624;
+  --color-ink-2: #1b1a18;
+  --color-stone: #7a776e;
+  --color-stone-2: #a8a599;
+  --color-line: #e6e2d4;
+  --color-line-2: #37342f;
+  --color-surface: #ffffff;
+  --color-surface-2: #22201d;
+  --color-surface-soft: #fbf9f3;
+  --color-surface-soft-2: #1f1d1a;
+  --color-accent: #c96442;
+  --color-accent-soft: #eccebf;
+  --color-accent-2: #d97757;
+
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root {
+  --bg: var(--color-cream);
+  --surface: var(--color-surface);
+  --surface-soft: var(--color-surface-soft);
+  --border: var(--color-line);
+  --text: var(--color-ink);
+  --muted: var(--color-stone);
+  --faint: #b9b5a7;
+  --accent: var(--color-accent);
+  --accent-soft: var(--color-accent-soft);
+  --accent-fg: #ffffff;
+}
+
+.dark,
+[data-theme="dark"] {
+  --bg: var(--color-ink-2);
+  --surface: var(--color-surface-2);
+  --surface-soft: var(--color-surface-soft-2);
+  --border: var(--color-line-2);
+  --text: var(--color-cream-2);
+  --muted: var(--color-stone-2);
+  --faint: #5a5750;
+  --accent: var(--color-accent-2);
+  --accent-soft: #4a2b1e;
+  --accent-fg: #1a1a18;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg: var(--color-ink-2);
+    --surface: var(--color-surface-2);
+    --surface-soft: var(--color-surface-soft-2);
+    --border: var(--color-line-2);
+    --text: var(--color-cream-2);
+    --muted: var(--color-stone-2);
+    --faint: #5a5750;
+    --accent: var(--color-accent-2);
+    --accent-soft: #4a2b1e;
+    --accent-fg: #1a1a18;
   }
 }
 
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+body {
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Serif display type — used for headings and logo */
+.display {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.012em;
+}
+
+.display-wide {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.022em;
+}
+
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[contenteditable]:focus-visible {
+  outline: none;
+}
+
+/* Subtle inner scroll shadow on columns */
+.scroll-fade {
+  mask-image: linear-gradient(to bottom, transparent 0, black 14px, black calc(100% - 14px), transparent 100%);
+}
+
+/* Reveal hover-only controls with a small delay */
+.hover-reveal {
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.group:hover .hover-reveal,
+.group:focus-within .hover-reveal {
+  opacity: 1;
+}
+
+/* Message text flow — Claude-like reading column */
+.prose-chat {
+  line-height: 1.65;
+}
+.prose-chat p + p {
+  margin-top: 0.75rem;
+}
+
+/* Dotted project marker */
+.dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: currentColor;
 }
