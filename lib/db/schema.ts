@@ -54,6 +54,11 @@ export const settings = sqliteTable("settings", {
   llmEditModel: text("llm_edit_model").default("claude-haiku-4-5-20251001"),
   feedToken: text("feed_token"), // random token protecting the iCal feed URL
   bootstrapped: integer("bootstrapped", { mode: "boolean" }).notNull().default(false),
+  notificationIntensity: text("notification_intensity", {
+    enum: ["off", "light", "balanced", "intense"],
+  })
+    .notNull()
+    .default("light"),
 });
 
 export const credentials = sqliteTable("credentials", {

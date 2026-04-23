@@ -54,6 +54,11 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/setup", req.url));
   }
 
+  // Once bootstrapped, /setup and /api/setup/* are no longer public.
+  if (pathname.startsWith("/setup") || pathname.startsWith("/api/setup/")) {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+
   // Public-after-bootstrap routes pass through.
   if (isPublic(pathname)) return NextResponse.next();
 
