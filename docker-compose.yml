@@ -1,0 +1,30 @@
+# Single-service compose. nudge listens on 127.0.0.1:3000 so only the local
+# host (or your own reverse proxy) can reach it. HTTPS, domain, and proxy are
+# your responsibility — point your Caddy / nginx / Traefik / Cloudflare Tunnel
+# at localhost:3000 and you're done.
+
+services:
+  nudge:
+    build: .
+    image: nudge:local
+    container_name: nudge
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./data:/data
+    environment:
+      DATABASE_URL: "file:/data/nudge.db"
+      MASTER_KEY_FILE: "/run/secrets/master_key"
+      CRON_SECRET_FILE: "/run/secrets/cron_secret"
+      AUTH_URL: "${AUTH_URL:-http://localhost:3000}"
+      NODE_ENV: "production"
+    secrets:
+      - master_key
+      - cron_secret
+    restart: unless-stopped
+
+secrets:
+  master_key:
+    file: ./secrets/master_key
+  cron_secret:
+    file: ./secrets/cron_secret
