@@ -119,6 +119,9 @@ export function PhoneCalendarSubscribe() {
           <li>
             The URL contains a secret token. Don&apos;t share it. Use <b>Rotate</b> to invalidate all subscriptions.
           </li>
+          <li>
+            <b>Alternative (CalDAV-style)</b>: you can also authenticate with your nudge username and password via HTTP Basic auth. Most calendar clients accept <code className="font-mono text-xs">https://username:password@host/api/calendar/feed/&lt;token&gt;</code>, or a Username/Password field in the subscription dialog. Revoke access by changing your password or rotating the URL token.
+          </li>
         </ul>
       </details>
     </div>
