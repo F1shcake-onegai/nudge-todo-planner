@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db/client";
-import { SESSION_COOKIE } from "@/lib/auth";
+import { SESSION_COOKIE, clearSessionCookie, validateSession } from "@/lib/auth";
 
 // Paths that never require auth. Keep additions narrow.
 const PUBLIC_PREFIXES = [
@@ -26,10 +26,12 @@ function isPublic(pathname: string) {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-function hasCredential(req: NextRequest) {
-  if (req.cookies.get(SESSION_COOKIE)?.value) return true;
+function tokenFromRequest(req: NextRequest): string | null {
+  const cookieVal = req.cookies.get(SESSION_COOKIE)?.value;
+  if (cookieVal) return cookieVal;
   const auth = req.headers.get("authorization") ?? "";
-  return auth.startsWith("Bearer ");
+  if (auth.startsWith("Bearer ")) return auth.slice(7).trim();
+  return null;
 }
 
 export async function proxy(req: NextRequest) {
@@ -37,7 +39,7 @@ export async function proxy(req: NextRequest) {
 
   if (isStatic(pathname)) return NextResponse.next();
 
-  // Bootstrap gate: until the admin is set up, everything routes to /setup.
+  // Bootstrap gate.
   const settings = await db.query.settings.findFirst();
   const bootstrapped = settings?.bootstrapped === true;
 
@@ -52,21 +54,32 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/setup", req.url));
   }
 
-  // Bootstrapped + public route → pass.
+  // Public-after-bootstrap routes pass through.
   if (isPublic(pathname)) return NextResponse.next();
 
-  // Bootstrapped + protected route → require a credential (cookie or bearer).
-  // Full session validation happens in the route handler; this is just
-  // Next's recommended "optimistic check" pattern.
-  if (hasCredential(req)) return NextResponse.next();
+  // Validate the session against the DB (not just "does the cookie exist").
+  const token = tokenFromRequest(req);
+  const session = token ? await validateSession(token) : null;
 
+  if (session) return NextResponse.next();
+
+  // Invalid or missing → redirect pages, 401 APIs, and proactively clear the
+  // stale cookie if one was present so the browser stops sending it.
   if (pathname.startsWith("/api/")) {
-    return new NextResponse("Unauthorized", { status: 401 });
+    const res = new NextResponse("Unauthorized", { status: 401 });
+    if (token && req.cookies.get(SESSION_COOKIE)?.value) {
+      res.headers.append("Set-Cookie", clearSessionCookie());
+    }
+    return res;
   }
 
   const login = new URL("/login", req.url);
   if (pathname !== "/") login.searchParams.set("next", pathname);
-  return NextResponse.redirect(login);
+  const res = NextResponse.redirect(login);
+  if (token && req.cookies.get(SESSION_COOKIE)?.value) {
+    res.headers.append("Set-Cookie", clearSessionCookie());
+  }
+  return res;
 }
 
 export const config = {

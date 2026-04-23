@@ -69,6 +69,7 @@ export async function createSession(opts: {
   return { id, expiresAt: new Date(now.getTime() + ttl), label, ttlMs: ttl };
 }
 
+/** Full lookup + touch lastSeenAt + expiry sweep. Use in route handlers. */
 export async function getSession(token: string) {
   if (!token) return null;
   const row = await db.query.sessions.findFirst({ where: eq(schema.sessions.id, token) });
@@ -77,8 +78,16 @@ export async function getSession(token: string) {
     await db.delete(schema.sessions).where(eq(schema.sessions.id, token));
     return null;
   }
-  // lightweight last-seen update (non-critical; skip on token-bucket churn later if needed)
   await db.update(schema.sessions).set({ lastSeenAt: new Date() }).where(eq(schema.sessions.id, token));
+  return row;
+}
+
+/** Read-only session check — no write. Use in proxy (every request hits this). */
+export async function validateSession(token: string) {
+  if (!token) return null;
+  const row = await db.query.sessions.findFirst({ where: eq(schema.sessions.id, token) });
+  if (!row) return null;
+  if (row.expiresAt.getTime() < Date.now()) return null;
   return row;
 }
 
