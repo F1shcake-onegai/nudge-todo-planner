@@ -72,6 +72,16 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent iOS zoom-on-focus for text inputs that are <16px */
+@media (max-width: 1023px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }
 
 body {
