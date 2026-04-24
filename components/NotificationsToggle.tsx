@@ -38,6 +38,11 @@ export function NotificationsToggle() {
       await navigator.serviceWorker.ready;
       const permission = await Notification.requestPermission();
       if (permission !== "granted") return;
+      // Drop any pre-existing subscription first — if VAPID keys rotated
+      // since the last subscribe(), the new applicationServerKey would
+      // otherwise throw InvalidStateError.
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) await existing.unsubscribe();
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(info.publicKey),
