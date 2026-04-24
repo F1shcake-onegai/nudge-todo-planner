@@ -12,11 +12,12 @@ import {
   Trash2,
   ChevronLeft,
   Flag,
+  MoreVertical,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, isPast, isToday, isTomorrow } from "date-fns";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { useClickOutside } from "@/lib/hooks";
+import { useClickOutside, useLongPress } from "@/lib/hooks";
 
 type Props = {
   projects: Project[];
@@ -104,57 +105,38 @@ export function TaskList({ projects, tasks, onRefresh }: Props) {
           : renamingUnassigned;
         return (
           <section key={projectId ?? "inbox"}>
-            <div
-              className="group mb-2 flex items-baseline gap-2.5 pl-1"
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setProjectMenu({ project: project ?? null, x: e.clientX, y: e.clientY });
+            <ProjectHeader
+              project={project}
+              isRenaming={isRenaming}
+              openCount={open}
+              onOpenMenu={(x, y) =>
+                setProjectMenu({ project: project ?? null, x, y })
+              }
+              onRenameDone={async (v) => {
+                const trimmed = v.trim();
+                if (project) {
+                  if (trimmed && trimmed !== project.name) {
+                    await fetch(`/api/projects/${project.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name: trimmed }),
+                    });
+                    await onRefresh();
+                  }
+                  setRenamingProjectId(null);
+                } else {
+                  if (trimmed) {
+                    await fetch("/api/projects", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name: trimmed, absorbUnassigned: true }),
+                    });
+                    await onRefresh();
+                  }
+                  setRenamingUnassigned(false);
+                }
               }}
-            >
-              <span
-                className="dot"
-                style={{ color: project?.color ?? "var(--muted)" }}
-                aria-hidden
-              />
-              {isRenaming ? (
-                <ProjectRenameInput
-                  value={project?.name ?? ""}
-                  placeholder={project ? undefined : "Project name"}
-                  onDone={async (v) => {
-                    const trimmed = v.trim();
-                    if (project) {
-                      if (trimmed && trimmed !== project.name) {
-                        await fetch(`/api/projects/${project.id}`, {
-                          method: "PATCH",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ name: trimmed }),
-                        });
-                        await onRefresh();
-                      }
-                      setRenamingProjectId(null);
-                    } else {
-                      if (trimmed) {
-                        await fetch("/api/projects", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ name: trimmed, absorbUnassigned: true }),
-                        });
-                        await onRefresh();
-                      }
-                      setRenamingUnassigned(false);
-                    }
-                  }}
-                />
-              ) : (
-                <h3 className="display text-[15px]">{project?.name ?? "New Task"}</h3>
-              )}
-              {open > 0 ? (
-                <span className="text-[11px] font-medium text-[var(--faint)]">{open} open</span>
-              ) : (
-                <span className="text-[11px] font-medium text-[var(--accent)]">all done</span>
-              )}
-            </div>
+            />
             <ul className="flex flex-col">
               {items.map((t) => (
                 <TaskRow
@@ -337,6 +319,65 @@ function ProjectRenameInput({
   );
 }
 
+function ProjectHeader({
+  project,
+  isRenaming,
+  openCount,
+  onOpenMenu,
+  onRenameDone,
+}: {
+  project: Project | undefined;
+  isRenaming: boolean;
+  openCount: number;
+  onOpenMenu: (x: number, y: number) => void;
+  onRenameDone: (v: string) => void | Promise<void>;
+}) {
+  const longPress = useLongPress(onOpenMenu);
+  return (
+    <div
+      className="group mb-2 flex items-center gap-2.5 pl-1"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onOpenMenu(e.clientX, e.clientY);
+      }}
+      {...longPress}
+    >
+      <span
+        className="dot"
+        style={{ color: project?.color ?? "var(--muted)" }}
+        aria-hidden
+      />
+      {isRenaming ? (
+        <ProjectRenameInput
+          value={project?.name ?? ""}
+          placeholder={project ? undefined : "Project name"}
+          onDone={onRenameDone}
+        />
+      ) : (
+        <h3 className="display text-[15px]">{project?.name ?? "New Task"}</h3>
+      )}
+      {openCount > 0 ? (
+        <span className="text-[11px] font-medium text-[var(--faint)]">{openCount} open</span>
+      ) : (
+        <span className="text-[11px] font-medium text-[var(--accent)]">all done</span>
+      )}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+          onOpenMenu(r.right, r.bottom);
+        }}
+        className="ml-auto rounded-md p-1 text-[var(--faint)] opacity-60 transition hover:bg-[var(--border)]/70 hover:opacity-100 group-hover:opacity-100"
+        aria-label="Project actions"
+      >
+        <MoreVertical className="size-4" />
+      </button>
+    </div>
+  );
+}
+
 // ─── Row ──────────────────────────────────────────────────────────────────
 
 function TaskRow({
@@ -402,6 +443,8 @@ function TaskRow({
     await refresh();
   }
 
+  const longPress = useLongPress((x, y) => openMenu(task, x, y));
+
   return (
     <li>
       <div
@@ -410,6 +453,7 @@ function TaskRow({
           e.stopPropagation();
           openMenu(task, e.clientX, e.clientY);
         }}
+        {...longPress}
         className={cn(
           "group relative flex items-center gap-2 rounded-lg px-2 py-1.5 transition",
           "hover:bg-[var(--surface)]",
@@ -461,6 +505,18 @@ function TaskRow({
             editing={editingDeadline}
             onEditingChange={setEditingDeadline}
           />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+              openMenu(task, r.right, r.bottom);
+            }}
+            className="rounded-md p-1 text-[var(--faint)] opacity-50 transition hover:bg-[var(--border)]/70 hover:opacity-100 group-hover:opacity-100"
+            aria-label="Task actions"
+          >
+            <MoreVertical className="size-3.5" />
+          </button>
         </div>
       </div>
 

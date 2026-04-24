@@ -9,9 +9,11 @@ import { TaskList } from "@/components/TaskList";
 import { AddTaskBar } from "@/components/AddTaskBar";
 import type { Project, Task } from "@/lib/db/schema";
 import Link from "next/link";
-import { Settings, Sparkles, LogOut, ListTodo, X } from "lucide-react";
+import { Settings, Sparkles, LogOut, ListTodo, MessageSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+
+type MobileView = "chat" | "tasks";
 
 export default function Home() {
   const router = useRouter();
@@ -21,7 +23,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobileView, setMobileView] = useState<MobileView>("chat");
 
   const loadTasks = useCallback(async () => {
     const r = await fetch("/api/tasks", { cache: "no-store" });
@@ -48,10 +50,11 @@ export default function Home() {
     if (status === "ready" && messages.length) loadTasks();
   }, [status, messages.length, loadTasks]);
 
-  // Close the drawer when the viewport grows into the permanent-panel breakpoint.
+  // When the viewport grows into the dual-panel breakpoint, reset to the
+  // chat page so re-shrinking doesn't re-enter on the tasks view.
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
-    const onChange = () => mq.matches && setDrawerOpen(false);
+    const onChange = () => mq.matches && setMobileView("chat");
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
@@ -66,15 +69,18 @@ export default function Home() {
           <span className="display-wide text-lg">nudge</span>
         </div>
         <div className="flex items-center gap-0.5">
-          {/* Mobile / tablet: toggle task drawer */}
           <button
             type="button"
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => setMobileView((v) => (v === "chat" ? "tasks" : "chat"))}
             className="relative flex lg:hidden size-10 items-center justify-center rounded-xl text-[var(--muted)] hover:bg-[var(--surface)]"
-            aria-label="Tasks"
+            aria-label={mobileView === "chat" ? "Tasks" : "Chat"}
           >
-            <ListTodo className="size-5" />
-            {openCount > 0 ? (
+            {mobileView === "chat" ? (
+              <ListTodo className="size-5" />
+            ) : (
+              <MessageSquare className="size-5" />
+            )}
+            {mobileView === "chat" && openCount > 0 ? (
               <span className="absolute top-1 right-1 min-w-[16px] rounded-full bg-[var(--accent)] px-1 text-[10px] font-medium leading-4 text-[var(--accent-fg)]">
                 {openCount > 99 ? "99+" : openCount}
               </span>
@@ -104,8 +110,13 @@ export default function Home() {
       </header>
 
       <div className="flex flex-1 min-h-0">
-        {/* Chat column */}
-        <section className="flex min-w-0 flex-1 flex-col">
+        {/* Chat column: full width < lg when view=chat, flex-1 at lg+ (always visible with task sidebar). */}
+        <section
+          className={cn(
+            "min-w-0 flex-1 flex-col",
+            mobileView === "chat" ? "flex" : "hidden lg:flex",
+          )}
+        >
           <div className="scroll-fade flex-1 overflow-y-auto">
             <ChatHistory messages={messages} onSuggest={(s) => setInput(s)} />
           </div>
@@ -126,118 +137,26 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Task column — permanent on desktop, drawer on mobile/tablet */}
-        <TaskPanel
-          projects={projects}
-          tasks={tasks}
-          onRefresh={loadTasks}
-          openCount={openCount}
-          drawerOpen={drawerOpen}
-          onCloseDrawer={() => setDrawerOpen(false)}
-        />
-      </div>
-    </div>
-  );
-}
-
-function TaskPanel({
-  projects,
-  tasks,
-  onRefresh,
-  openCount,
-  drawerOpen,
-  onCloseDrawer,
-}: {
-  projects: Project[];
-  tasks: Task[];
-  onRefresh: () => Promise<void>;
-  openCount: number;
-  drawerOpen: boolean;
-  onCloseDrawer: () => void;
-}) {
-  return (
-    <>
-      {/* Permanent sidebar ≥ lg */}
-      <aside className="hidden lg:flex w-[480px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface-soft)]">
-        <PanelHeader openCount={openCount} />
-        <PanelBody projects={projects} tasks={tasks} onRefresh={onRefresh} />
-        <PanelFooter projects={projects} onAdded={onRefresh} />
-      </aside>
-
-      {/* Drawer < lg */}
-      {drawerOpen ? (
-        <div
-          className="fixed inset-0 z-40 lg:hidden"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Tasks"
+        {/* Task column: full width < lg when view=tasks, permanent 480px sidebar at lg+. */}
+        <aside
+          className={cn(
+            "flex-col bg-[var(--surface-soft)]",
+            "flex-1 lg:flex-none lg:w-[480px] lg:shrink-0 lg:border-l lg:border-[var(--border)]",
+            mobileView === "tasks" ? "flex" : "hidden lg:flex",
+          )}
         >
-          <div
-            className="absolute inset-0 bg-black/30 backdrop-blur-[1px] motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150"
-            onClick={onCloseDrawer}
-          />
-          <div
-            className={cn(
-              "absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-[var(--border)] bg-[var(--surface-soft)]",
-              "motion-safe:animate-in motion-safe:slide-in-from-right motion-safe:duration-200",
-            )}
-          >
-            <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
-              <h2 className="display text-base">Tasks</h2>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-[var(--faint)]">{openCount} open</span>
-                <button
-                  type="button"
-                  onClick={onCloseDrawer}
-                  className="flex size-9 items-center justify-center rounded-xl text-[var(--muted)] hover:bg-[var(--surface)]"
-                  aria-label="Close"
-                >
-                  <X className="size-5" />
-                </button>
-              </div>
-            </div>
-            <PanelBody projects={projects} tasks={tasks} onRefresh={onRefresh} />
-            <PanelFooter projects={projects} onAdded={onRefresh} />
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
+            <h2 className="display text-base">Tasks</h2>
+            <span className="text-[11px] text-[var(--faint)]">{openCount} open</span>
           </div>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function PanelHeader({ openCount }: { openCount: number }) {
-  return (
-    <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
-      <h2 className="display text-base">Tasks</h2>
-      <span className="text-[11px] text-[var(--faint)]">{openCount} open</span>
-    </div>
-  );
-}
-function PanelBody({
-  projects,
-  tasks,
-  onRefresh,
-}: {
-  projects: Project[];
-  tasks: Task[];
-  onRefresh: () => Promise<void>;
-}) {
-  return (
-    <div className="flex-1 overflow-y-auto px-3 py-4">
-      <TaskList projects={projects} tasks={tasks} onRefresh={onRefresh} />
-    </div>
-  );
-}
-function PanelFooter({
-  projects,
-  onAdded,
-}: {
-  projects: Project[];
-  onAdded: () => void | Promise<void>;
-}) {
-  return (
-    <div className="border-t border-[var(--border)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-      <AddTaskBar projects={projects} onAdded={onAdded} />
+          <div className="flex-1 overflow-y-auto px-3 py-4">
+            <TaskList projects={projects} tasks={tasks} onRefresh={loadTasks} />
+          </div>
+          <div className="border-t border-[var(--border)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <AddTaskBar projects={projects} onAdded={loadTasks} />
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { ArrowUp, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Props = {
   value: string;
@@ -15,6 +15,16 @@ type Props = {
 export function ChatInput({ value, onChange, onSubmit, onStop, status }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const busy = status === "submitted" || status === "streaming";
+  // Touch devices have no Shift key, so Enter sending would lock out newlines.
+  // Fall back to Send-button-only submit there.
+  const [coarse, setCoarse] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: coarse)");
+    const update = () => setCoarse(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -39,6 +49,7 @@ export function ChatInput({ value, onChange, onSubmit, onStop, status }: Props) 
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
+          if (coarse) return;
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             if (!busy && value.trim()) onSubmit();
@@ -53,7 +64,7 @@ export function ChatInput({ value, onChange, onSubmit, onStop, status }: Props) 
       />
       <div className="flex items-center justify-between pl-[2px]">
         <span className="text-[11px] text-[var(--faint)]">
-          ⏎ send · ⇧⏎ newline
+          {coarse ? "tap → send" : "⏎ send · ⇧⏎ newline"}
         </span>
         {busy ? (
           <button
