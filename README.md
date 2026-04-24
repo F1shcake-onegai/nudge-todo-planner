@@ -9,8 +9,9 @@ A self-hosted, single-admin task manager. Brain-dump what's on your mind in plai
 - **Chat-driven task capture** — brain-dump whatever's on your mind; the assistant creates projects, tasks, subtasks, deadlines, priorities.
 - **Chat edits with creation-date filters** — "mark chapter 3 done", "delete all completed tasks from last week", "bump priority on overdue items" — the assistant resolves these against the current task list and creation timestamps.
 - **Strict scope** — the AI only handles tasks and scheduling. Off-topic prompts get a one-sentence refusal. Prompt-injection resistant.
-- **Manual editing** — click the status circle to toggle done, double-click a title to rename, right-click a row for a context menu (add subtask, change priority, set deadline, delete).
-- **Project management** — right-click a project header for rename / mark-all-done / delete. The "New Task" bucket (projectless) can be named and promoted into a real project.
+- **Manual editing** — click the status circle to toggle done, double-click a title to rename, right-click (or long-press on touch, or tap the `⋯` button) a row for a context menu (add subtask, change priority, set deadline, delete).
+- **Project management** — right-click / long-press / tap `⋯` on a project header for rename / mark-all-done / delete. The "New Task" bucket (projectless) can be named and promoted into a real project.
+- **Mobile-first layout** — below 1024px the app is a two-page view (chat default, tasks on the other page); hamburger swaps between them. Above 1024px the task list is a permanent sidebar alongside the chat.
 - **Adaptive nudges** — off / light (2/day) / balanced (4/day) / intense (8/day). Nudges rotate across different projects so one loud deadline doesn't drown the rest out. Randomized title + body copy from template pools, jitter scales with intensity density.
 - **Deadline calendar feed** — one-way iCal subscription, all-day events per task deadline. HTTP Basic auth with your nudge username + password (CalDAV-style). Optional; not surfaced by default.
 - **Auth** — admin username + password (bcrypt), session cookies for browsers, long-lived bearer tokens for native apps. CSRF-safe by default. Rate-limited login + chat endpoints.
@@ -106,6 +107,8 @@ libSQL (Drizzle)
 ## Phone / mobile
 
 Install the web app as a PWA (share → "Add to Home Screen" on iOS; install prompt on Android Chrome). Push notifications work in installed PWA mode on iOS 16.4+ and on Android / desktop Chrome directly.
+
+Below the 1024px breakpoint the layout switches to a two-page view: chat on one page, tasks on the other, hamburger in the header to toggle. Task rows and project headers both expose a trailing `⋯` button (always visible) plus a 500ms long-press gesture — both open the same context menu (rename / priority / deadline / delete). On touch devices, Enter in the chat inserts a newline; tap the Send button to submit.
 
 A future native mobile app can talk to the same HTTP API via bearer tokens. See [`docs/mobile-api.md`](docs/mobile-api.md) for the API surface.
 
